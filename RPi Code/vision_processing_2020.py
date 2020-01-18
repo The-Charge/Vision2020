@@ -30,9 +30,9 @@ class ProcessorBase:
     BLUE = (255, 0, 0)
     WHITE = (255, 255, 255)
     BLACK = (0, 0, 0)
-    YELLOW = (255, 255, 0)
+    YELLOW = (0, 255, 255)
 
-    def draw_labels(self, img, labels, width=175):
+    def label(self, img, labels, width=175):
         """Draw a black box with text in the top-left on an image."""
         font = cv2.FONT_HERSHEY_SIMPLEX
         y = 20
@@ -83,6 +83,19 @@ class ProcessorBase:
         R[1, 2] += (nH / 2) - cY
 
         return cv2.warpAffine(img, R, (nW, nH))
+    
+    def label_cnt(self, img, cnt, text):
+        text = str(text)
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        size, _ = cv2.getTextSize(text, font, 1, 1)
+
+        left = tuple(cnt[cnt[:, :, 0].argmin()][0])
+        top = tuple(cnt[cnt[:, :, 1].argmin()][0])
+        point = left[0], top[1] - 10
+        point_2 = point[0] + size[0], point[1] - size[1]
+
+        cv2.rectangle(img, point, point_2, self.BLACK, -1)
+        cv2.putText(img, text, point, font, 1, self.WHITE, 1, cv2.LINE_AA)
 
 
 class BallProcessing(ProcessorBase):
@@ -118,12 +131,24 @@ class TargetProcessing(ProcessorBase):
             [-9.8, -17, 0],
             [9.8, -17, 0],
             [19.6, 0, 0],
+        ])
+        self.inner_obj_points = np.array([
+            [-19.6, 0, 29.25],
+            [-9.8, -17, 29.25],
+            [9.8, -17, 29.25],
+            [19.6, 0, 29.25],
+        ])
+        self.outer_obj_points_8gon = np.array([
+            [-19.6, 0, 0],
+            [-9.8, -17, 0],
+            [9.8, -17, 0],
+            [19.6, 0, 0],
             [17.3, 0, 0],
             [8.6, -15, 0],
             [-8.6, -15, 0],
             [-17.3, 0, 0],
         ])
-        self.inner_obj_points = np.array([
+        self.inner_obj_points_8gon = np.array([
             [-19.6, 0, 29.25],
             [-9.8, -17, 29.25],
             [9.8, -17, 29.25],
@@ -151,19 +176,22 @@ class TargetProcessing(ProcessorBase):
         self.draw_img = draw_img
 
         # The threshold for checking images.
-        self.lower_thresh = 20, 0, 15
-        self.upper_thresh = 60, 255, 255
-
+        self.lower_thresh = 40, 0, 90
+        self.upper_thresh = 90, 255, 255
+        self.home_lower_thresh = 20, 0, 15
+        self.home_upper_thresh = 60, 255, 255
+    
         # The minimum alignment angle needed to target the inner port.
         self.minimum_alignment = 20
 
         # Used when finding the approximate polygon.
-        self.epsilon_adjust = 0.005
+        self.epsilon_adjust = 0.05
 
     def process_image(self, frame):
         """Take an image, isolate the target, and return the calculated values."""
 
         # This is untested, it's just set to 0 currently.
+        frame = cv2.blur(frame, (3, 3))
         img = self.rotate(frame, self.camera_rotation)
 
         # The image returned by cvsink.getFrame() is already in BGR
@@ -174,58 +202,58 @@ class TargetProcessing(ProcessorBase):
 
         # Filter contours
         cnts = self._get_valid_cnts(cnts)
-        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x))
+        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x), reverse=True)
 
         if len(cnts) > 0:
             # If a contour is present, use the largest/closest one
             cnt = cnts[0]
-            points = []
-            points = np.array(points, dtype='float32')
 
-            # _, rvec, tvec = cv2.solvePnP(self.outer_obj_points, points,
-            #                              self.camera_matrix, self.dist_matrix)
-            # tvec[2][0] += self.z_offset
-            # tvec[0][0] += self.x_offset
-            # distance, horizontal_angle, vertical_angle, alignment_angle = self._process_vecs(tvec, rvec)
+            # Maybe this will stop there being a fifth point in the middle of a straight line
+            epsilon = 0.01 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+
+            hull = cv2.convexHull(approx)
+            epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
+            hull = cv2.approxPolyDP(hull, epsilon, True)
+            points = np.array([
+                hull[3][0],
+                hull[2][0],
+                hull[1][0],
+                hull[0][0],
+            ], dtype='float')
+
+            _, rvec, tvec = cv2.solvePnP(self.outer_obj_points, points,
+                                         self.camera_matrix, self.dist_matrix)
+            tvec[2][0] += self.z_offset
+            tvec[0][0] += self.x_offset
+            distance, horizontal_angle, vertical_angle, alignment_angle = self._process_vecs(tvec, rvec)
             inner = 0  # whether coordinates refer to inner port
 
-            # If we can target the inner port, redo the calculations
-            #  with the inner port's coordinates.
-            alignment_angle = 100000
-            if abs(alignment_angle) < self.minimum_alignment:
-                _, rvec, tvec = cv2.solvePnP(self.inner_obj_points, points,
-                                             self.camera_matrix, self.dist_matrix)
-                tvec[2][0] += self.z_offset
-                tvec[0][0] += self.x_offset
-                distance, horizontal_angle, vertical_angle, alignment_angle = self._process_vecs(tvec, rvec)
-                inner = 1
-
             if self.draw_img:
-                cv2.drawContours(frame, [cnt], 0, self.BLUE, 2)
+                cv2.drawContours(frame, [cnt], 0, self.BLUE, 1)
 
-                epsilon = self.epsilon_adjust * cv2.arcLength(cnt, True)
-                approx = cv2.approxPolyDP(cnt, epsilon, True)
-                cv2.drawContours(frame, [approx], 0, self.YELLOW)
+                mid = ((hull[0][0][0] + hull[1][0][0] + hull[2][0][0] + hull[3][0][0]) // 4,
+                       (hull[0][0][1] + hull[3][0][1]) // 2)
+                cv2.circle(frame, mid, 3, self.RED, -1)
+                cv2.circle(frame, mid, 10, self.RED, 1)
+                cv2.drawContours(frame, [hull], 0, self.RED, 1)
+                cv2.drawContours(frame, [approx], 0, self.YELLOW, 2)
 
-                # Draw the middle of the contour
-                # mid = ((cnt[0][0] + cnt[1][0] + cnt[2][0] + cnt[3][0] + cnt[4][0] + cnt[5][0] + cnt[6][0] + cnt[7][0]) // 2,
-                #        (cnt[0][1] + cnt[1][1] + cnt[2][1] + cnt[3][1] + cnt[4][1] + cnt[5][1] + cnt[6][1] + cnt[7][1]) // 2)
-                # cv2.circle(frame, mid, 3, self.RED, -1)
-                # cv2.circle(frame, mid, 10, self.RED, -1)
-
-                # 0: top left OR top right
-                # 1: bottom left
-                # 2: bottom right
-                center = approx[1][0][0], approx[1][0][1]
-                cv2.circle(frame, center, 5, self.RED, -1)
-                center = approx[2][0][0], approx[2][0][1]
-                cv2.circle(frame, center, 5, self.WHITE, -1)
+                for point in hull:
+                    center = point[0][0], point[0][1]
+                    cv2.circle(frame, center, 6, self.WHITE, -1)
 
                 # Draw a vertical line down the image
                 h, w, _ = frame.shape
                 cv2.line(frame, (w // 2, 0), (w // 2, h), self.YELLOW, 1)
 
-                return approx, frame
+                labels = [
+                    f'Distance: {round(distance)}"',
+                    f'Horizontal: {round(horizontal_angle)}',
+                    f'Vertical: {round(vertical_angle)}',
+                    f'Alignment: {round(alignment_angle)}',
+                ]
+                self.label(frame, labels)
 
             # Return 1(success) and values. Return the frame that may or
             #  may not have been modified.
@@ -269,25 +297,13 @@ class TargetProcessing(ProcessorBase):
             # Eliminate contours that are too small
             if len(cnt) <= 5 or cv2.contourArea(cnt) < 100:
                 continue
-
-            # Get approximate sides in contour shape, and only run if 4
-            epsilon = self.epsilon_adjust * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
-            if len(approx) != 8:
-                continue
-
-            # Get the similarity between the area of the convex hull of
-            #  the contour and the area of the contour, throw it out if
-            #  it's more than 40% different.
+            
+            # Eliminate contours whose convex hull does not have 4 sides
             hull = cv2.convexHull(cnt)
-            hull_area = cv2.contourArea(hull)
-            cnt_area = cv2.contourArea(cnt)
-            solidity = cnt_area / hull_area
-            target_solidity = 0.22145
-            average = (target_solidity + solidity) / 2
-            difference = abs(target_solidity - solidity) / average
-            # if difference > 0.4:
-            #     continue
+            epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
+            hull = cv2.approxPolyDP(hull, epsilon, True)
+            if len(hull) < 4:
+                continue
 
             valid.append(cnt)
         return valid

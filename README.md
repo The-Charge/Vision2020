@@ -12,6 +12,15 @@ When connecting over ethernet, you first have to change your ethernet connection
 
 To connect to the dashboard go to `frcvision.local/` or if that doesn't work the IP address of the Pi, so `10.26.19.12/`.
 
+#### Setting static IP address on Pi
+IPv4 Address: `10.26.19.12`
+Subnet Mask: `255.255.255.0`
+Gateway: `10.26.19.1`
+DNS Server: `10.26.19.1`
+
+#### If you can't connect to the Pi
+If you have an issue connecting to the Pi with a static IP, you can find the IP of the Pi by connecting to it with a keyboard and monitor and running the command `sudo ifconfig`. The IP of the Pi is listed as `inet` under `eth0` (make sure the Pi is still connected to your computer via ethernet if it doesn't appear). Then set the IP address of the computer's ethernet to `XXX.XXX.XXX.5` and the subnet mask to `255.0.0.0`.
+
 ### Saving camera parameters
 I've had a lot of trouble with saving the camera parameters. Properties such as gain and exposure wouldn't change correctly, it would take severl tries and they wouldn't change on their own. I don't know how I got it working, it just works. My advice: whenever you change the camera parameters keep a backup of the previous settings in case things break. Also if you still have trouble try change the parametes ddirectly from the json file and not hitting their save to json file option. Another note, if you try and boot the pi but it gives you an error that says something about a json file not being found, just resave the camera settings and it should fix it.
 
