@@ -24,6 +24,9 @@ If you have an issue connecting to the Pi with a static IP, you can find the IP 
 ### Saving camera parameters
 I've had a lot of trouble with saving the camera parameters. Properties such as gain and exposure wouldn't change correctly, it would take severl tries and they wouldn't change on their own. I don't know how I got it working, it just works. My advice: whenever you change the camera parameters keep a backup of the previous settings in case things break. Also if you still have trouble try change the parametes ddirectly from the json file and not hitting their save to json file option. Another note, if you try and boot the pi but it gives you an error that says something about a json file not being found, just resave the camera settings and it should fix it.
 
+### Network tables
+You can view the NetworkTables and edit them on the Pi without connecting to the robot by using the Pi in server mode, and then using OutlineViewer and connect to `10.26.19.12`.
+
 ## Machine Learning
 
 We might do machine learning, we might not. The docs for it are [here](https://docs.wpilib.org/en/latest/docs/software/examples-tutorials/machine-learning/index.html). The docs direct you to the site [Supervisely](https://supervise.ly/) to get the dataset. The images might be useful as data to get a ball filter as another option than machine learning. An excerpt from some of this downloaded data that could be used for that is in the folder titled `Power Cell Images`.

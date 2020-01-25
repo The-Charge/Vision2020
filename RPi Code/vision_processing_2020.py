@@ -22,6 +22,11 @@ server = None
 camera_configs = []
 cameras = []
 
+USE_MODIFIED_IMAGE = True
+PAUSE = False
+USE_SMART_DASHBOARD = True
+processor = None
+
 
 class ProcessorBase:
     """A class that stores methods that could apply to any processor, such as drawing labels and creating matrices."""
@@ -230,14 +235,14 @@ class TargetProcessing(ProcessorBase):
             inner = 0  # whether coordinates refer to inner port
 
             if self.draw_img:
-                cv2.drawContours(frame, [cnt], 0, self.BLUE, 1)
+                cv2.drawContours(frame, [cnt], 0, self.BLUE, 2)
 
-                mid = ((hull[0][0][0] + hull[1][0][0] + hull[2][0][0] + hull[3][0][0]) // 4,
+                mid = ((hull[0][0][0] + hull[3][0][0]) // 2,
                        (hull[0][0][1] + hull[3][0][1]) // 2)
                 cv2.circle(frame, mid, 3, self.RED, -1)
                 cv2.circle(frame, mid, 10, self.RED, 1)
+                cv2.drawContours(frame, [approx], 0, self.YELLOW, 1)
                 cv2.drawContours(frame, [hull], 0, self.RED, 1)
-                cv2.drawContours(frame, [approx], 0, self.YELLOW, 2)
 
                 for point in hull:
                     center = point[0][0], point[0][1]
@@ -263,9 +268,11 @@ class TargetProcessing(ProcessorBase):
         # If no contours, return all zeros and original frame
         return (0, 0, 0, 0, 0, 0), frame
 
-    def set_threshold(self, h_low, h_up, s_low, s_up, v_low, v_up):
-        self.lower_thresh = h_low, s_low, v_low
-        self.upper_thresh = h_up, s_up, v_up
+    def set_lower_threshold(self, h, s, v):
+        self.lower_thresh = h, s, v
+    
+    def set_upper_threshold(self, h, s, v):
+        self.upper_thresh = h, s, v
 
     def _process_vecs(self, tvec, rvec):
         """Turn rvec and tvec into distance and angles."""
@@ -278,7 +285,7 @@ class TargetProcessing(ProcessorBase):
 
         # Angle the turret needs to turn/raise to align with the target.
         horizontal_angle = math.degrees(math.atan2(x, z))
-        vertical_angle = math.degrees(math.atan2(y, z))
+        vertical_angle = -math.degrees(math.atan2(y, z))
 
         # Angle of the robot from the targets perspective; if the robot
         #  is aligned dead-on with the target or lookin at it from an
@@ -407,21 +414,34 @@ def read_config():
 def camera_listener(fromobj, key, value, isNew):
     """Stream camera i in driver_cameras whenever value is changed."""
     global driver_cameras, mjpeg_server
+    value = int(value)
+    value = min(max(0, value), len(driver_cameras) - 1)
     if value < len(driver_cameras):
         for _, sink, _ in driver_cameras:
             sink.setEnabled(False)
-        cam, sink, _ = driver_cameras[value]
+        cam, sink, config = driver_cameras[int(value)]
         sink.setEnabled(True)
         mjpeg_server.setSource(cam)
+        smart_dashboard.putString('Vision/current_camera_name', config['name'])
+        smart_dashboard.putString('Vision/current_camera_id', value)
+
+
+def set_lower_thresh(fromobj, key, value, isNew):
+    """Set the lower threshold for the target detection."""
+    global processor
+    if processor is not None:
+        print(value)
+        processor.set_lower_threshold(*value)
+
+
+def set_upper_thresh(fromobj, key, value, isNew):
+    global processor
+    if processor is not None:
+        print(value)
+        processor.set_upper_thresh(*value)
 
 
 if __name__ == '__main__':
-    # Testing only, this will tell the code to draw on the image
-    #  received from the image camera, will lower FPS.
-    USE_MODIFIED_IMAGE = True
-    PAUSE = False
-    USE_SMART_DASHBOARD = False
-
     if len(sys.argv) >= 2:
         config_file = sys.argv[1]
 
@@ -446,6 +466,19 @@ if __name__ == '__main__':
             | ntcore.constants.NT_NOTIFY_NEW
             | ntcore.constants.NT_NOTIFY_UPDATE
         )
+        smart_dashboard.getEntry('Vision/set_upper_thresh').addListener(
+            set_upper_thresh,
+            ntcore.constants.NT_NOTIFY_IMMEDIATE
+            | ntcore.constants.NT_NOTIFY_NEW
+            | ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/set_lower_thresh').addListener(
+            set_lower_thresh,
+            ntcore.constants.NT_NOTIFY_IMMEDIATE
+            | ntcore.constants.NT_NOTIFY_NEW
+            | ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        
 
     # Find primary and secondary cameras
     cameras = []
@@ -505,11 +538,10 @@ if __name__ == '__main__':
     # Start camera loop
     driver_camera = driver_cameras[0]
     driver_camera[1].setEnabled(True)
-    # mjpeg_server.setSource(driver_camera[0])
+    mjpeg_server.setSource(driver_camera[0])
 
     camera, cvsink, config = vision_camera
     cvsink.setEnabled(True)
-    # mjpeg_server.setSource(camera)
 
     # This code creates a cvsink which will push a modified image to the
     #  MJPEG stream. Testing only.
@@ -540,8 +572,9 @@ if __name__ == '__main__':
         if USE_MODIFIED_IMAGE:
             cvsource.putFrame(img)
         end_time = time.time()
+        fps = 1 / (end_time - start_time)
 
-        result = timestamp, *result, round(end_time - start_time, 5)
+        result = timestamp, *result, round(fps)
         # Result key:
         #  1. timestamp
         #  2. success (0/1)
@@ -550,10 +583,12 @@ if __name__ == '__main__':
         #  5. vertical angle
         #  6. alignment angle
         #  7. inner port (0/1)
-        #  8. elapsed time
+        #  8. instantaneous FPS
         print(result)
         if USE_SMART_DASHBOARD:
             smart_dashboard.putNumberArray('Vision/result', result)
+            smart_dashboard.putNumberArray('Vision/upper_thresh', processor.upper_thresh)
+            smart_dashboard.putNumberArray('Vision/lower_thresh', processor.lower_thresh)
         # Not sure if I need this. It might decrease the lag time of
         #  updating the NetworkTables, but it's untested.
         # ntinst.flush()
