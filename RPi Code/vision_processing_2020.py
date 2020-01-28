@@ -9,8 +9,8 @@ import time
 import sys
 import math
 
-from cscore import UsbCamera, MjpegServer, CvSink, CvSource, VideoMode
-from networktables import NetworkTablesInstance
+# from cscore import UsbCamera, MjpegServer, CvSink, CvSource, VideoMode
+# from networktables import NetworkTablesInstance
 import ntcore
 import numpy as np
 import cv2
@@ -88,7 +88,7 @@ class ProcessorBase:
         R[1, 2] += (nH / 2) - cY
 
         return cv2.warpAffine(img, R, (nW, nH))
-    
+
     def label_cnt(self, img, cnt, text):
         text = str(text)
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -105,7 +105,41 @@ class ProcessorBase:
 
 class BallProcessing(ProcessorBase):
     """A processor class that would find a power core in an image. WIP."""
-    pass
+    def __init__(self):
+        pass
+
+    def process_image(self, frame):
+        frame = cv2.blur(frame, (3, 3))
+        img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+
+        lower_thresh = 0, 60, 120
+        upper_thresh = 40, 255, 255
+        thresh = cv2.inRange(img, lower_thresh, upper_thresh)
+        cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        cnts = self._get_valid(cnts)
+        for cnt in cnts:
+            c, r = cv2.minEnclosingCircle(cnt)
+            c = int(c[0]), int(c[1])
+            r = int(r)
+            # cv2.drawContours(frame, [cnt], 0, self.BLUE, 2)
+            cv2.circle(frame, c, r, self.RED, 1)
+        return frame
+
+    def _get_valid(self, cnts):
+        valid = []
+        for cnt in cnts:
+            if len(cnt) <= 5 or cv2.contourArea(cnt) < 200:
+                continue
+
+            _, r = cv2.minEnclosingCircle(cnt)
+            area = math.pi * (r**2)
+            cnt_area = cv2.contourArea(cnt)
+            if cnt_area / area < .7:
+                continue
+
+            valid.append(cnt)
+        return valid
 
 
 class TargetProcessing(ProcessorBase):
@@ -185,7 +219,7 @@ class TargetProcessing(ProcessorBase):
         self.upper_thresh = 90, 255, 255
         self.home_lower_thresh = 20, 0, 15
         self.home_upper_thresh = 60, 255, 255
-    
+
         # The minimum alignment angle needed to target the inner port.
         self.minimum_alignment = 20
 
@@ -270,7 +304,7 @@ class TargetProcessing(ProcessorBase):
 
     def set_lower_threshold(self, h, s, v):
         self.lower_thresh = h, s, v
-    
+
     def set_upper_threshold(self, h, s, v):
         self.upper_thresh = h, s, v
 
@@ -304,7 +338,7 @@ class TargetProcessing(ProcessorBase):
             # Eliminate contours that are too small
             if len(cnt) <= 5 or cv2.contourArea(cnt) < 100:
                 continue
-            
+
             # Eliminate contours whose convex hull does not have 4 sides
             hull = cv2.convexHull(cnt)
             epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
@@ -478,7 +512,7 @@ if __name__ == '__main__':
             | ntcore.constants.NT_NOTIFY_NEW
             | ntcore.constants.NT_NOTIFY_UPDATE
         )
-        
+
 
     # Find primary and secondary cameras
     cameras = []
