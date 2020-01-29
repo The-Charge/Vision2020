@@ -9,8 +9,8 @@ import time
 import sys
 import math
 
-# from cscore import UsbCamera, MjpegServer, CvSink, CvSource, VideoMode
-# from networktables import NetworkTablesInstance
+from cscore import UsbCamera, MjpegServer, CvSink, CvSource, VideoMode
+from networktables import NetworkTablesInstance
 import ntcore
 import numpy as np
 import cv2
@@ -117,14 +117,26 @@ class BallProcessing(ProcessorBase):
         thresh = cv2.inRange(img, lower_thresh, upper_thresh)
         cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+        result = None
         cnts = self._get_valid(cnts)
         for cnt in cnts:
             c, r = cv2.minEnclosingCircle(cnt)
             c = int(c[0]), int(c[1])
             r = int(r)
-            # cv2.drawContours(frame, [cnt], 0, self.BLUE, 2)
-            cv2.circle(frame, c, r, self.RED, 1)
-        return frame
+
+            cv2.drawContours(frame, [cnt], 0, self.GREEN, 2)
+            cv2.circle(frame, c, r, self.RED, 2)
+            width = frame.shape[1] // 2
+            distance = c[0] - width
+            if abs(distance) < r:
+                distance = 0
+            distance /= width
+            distance = round(100 * distance)
+
+            self.label_cnt(frame, cnt, distance)
+            cv2.line(frame, c, (width, c[1]), self.BLUE, 2)
+            cv2.circle(frame, (width, c[1]), 4, self.BLUE, -1)
+        return result, frame
 
     def _get_valid(self, cnts):
         valid = []
