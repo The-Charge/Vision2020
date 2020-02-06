@@ -105,38 +105,79 @@ class ProcessorBase:
 
 class BallProcessing(ProcessorBase):
     """A processor class that would find a power core in an image. WIP."""
-    def __init__(self):
-        pass
+    def __init__(self, camera_w, camera_h, view_thresh=True):
+        # Create camera matrix
+        self.dist_matrix = np.zeros((4, 1))
+        focal_length = camera_w  # width of camera
+        center = camera_w // 2, camera_h // 2
+        self.camera_matrix = np.array(
+            [[focal_length, 0, center[0]],
+             [0, focal_length, center[1]],
+             [0, 0, 1]], dtype='double')
+
+        self.obj_points = np.array([
+            [-3.5, 0, 0],
+            [0, -3.5, 0],
+            [3.5, 0, 0],
+            [0, 3.5, 0],
+        ])
+
+        self.lower_thresh = 0, 60, 120
+        self.lower_thresh = 0, 30, 60
+        self.upper_thresh = 40, 255, 255
+        self.view_thresh = view_thresh
+
+    def set_upper_sat(self, value):
+        self.upper_thresh = self.upper_thresh[0], value, self.upper_thresh[1]
 
     def process_image(self, frame):
         frame = cv2.blur(frame, (3, 3))
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-        lower_thresh = 0, 60, 120
-        upper_thresh = 40, 255, 255
-        thresh = cv2.inRange(img, lower_thresh, upper_thresh)
-        cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        thresh = cv2.inRange(img, self.lower_thresh, self.upper_thresh)
+        # cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # PC testing only
+        _, cnts, _ = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
-        result = None
         cnts = self._get_valid(cnts)
-        for cnt in cnts:
+        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x), reverse=True)
+
+        result = [0, 0, 0]
+        if len(cnts) > 0:
+            cnt = cnts[0]
             c, r = cv2.minEnclosingCircle(cnt)
             c = int(c[0]), int(c[1])
             r = int(r)
 
+            points = np.array([
+                np.array([c[0] - r, c[1]]),
+                np.array([c[0], c[1] - r]),
+                np.array([c[0] + r, c[1]]),
+                np.array([c[0], c[1] + 1]),
+            ], dtype='float')
+
+            _, rvec, tvec = cv2.solvePnP(self.obj_points, points,
+                                         self.camera_matrix, self.dist_matrix)
+            result = self._process_vecs(tvec, rvec)
+
             cv2.drawContours(frame, [cnt], 0, self.GREEN, 2)
             cv2.circle(frame, c, r, self.RED, 2)
-            width = frame.shape[1] // 2
-            distance = c[0] - width
-            if abs(distance) < r:
-                distance = 0
-            distance /= width
-            distance = round(100 * distance)
 
-            self.label_cnt(frame, cnt, distance)
-            cv2.line(frame, c, (width, c[1]), self.BLUE, 2)
-            cv2.circle(frame, (width, c[1]), 4, self.BLUE, -1)
+            self.label_cnt(frame, cnt, round(result[0]))
+
+            result = [1, result[0], result[1]]
+        if self.view_thresh:
+            return result, thresh
         return result, frame
+
+    def _process_vecs(self, tvec, rvec):
+        x = tvec[0][0]
+        y = tvec[1][0]
+        z = tvec[2][0]
+
+        distance = math.sqrt(x**2 + z**2)
+        horizontal_angle = math.degrees(math.atan2(x, z))
+
+        return horizontal_angle, distance
 
     def _get_valid(self, cnts):
         valid = []
@@ -524,6 +565,15 @@ if __name__ == '__main__':
             | ntcore.constants.NT_NOTIFY_NEW
             | ntcore.constants.NT_NOTIFY_UPDATE
         )
+        def set_upper_sat(fromobj, key, value, isNew):
+            processor.set_upper_sat(value)
+            smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
+            print(f'Update to {value}')
+        smart_dashboard.getEntry('Vision/Threshhold/Upper/saturation').addListener(
+            set_upper_sat,
+            ntcore.constants.NT_NOTIFY_IMMEDIATE
+            | ntcore.constants.NT_NOTIFY_UPDATE
+        )
 
 
     # Find primary and secondary cameras
@@ -601,7 +651,16 @@ if __name__ == '__main__':
 
     processor = TargetProcessing(config['width'], config['height'],
                                  draw_img=USE_MODIFIED_IMAGE)
+    processor = BallProcessing(config['width'], config['height'])
     img = np.zeros(shape=(config['height'], config['width'], 3), dtype=np.uint8)
+    
+    smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
+    smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
+    smart_dashboard.putNumber('Vision/Threshhold/Upper/value', processor.upper_thresh[2])
+    smart_dashboard.putNumber('Vision/Threshhold/Lower/hue', processor.lower_thresh[0])
+    smart_dashboard.putNumber('Vision/Threshhold/Lower/saturation', processor.lower_thresh[1])
+    smart_dashboard.putNumber('Vision/Threshhold/Lower/value', processor.lower_thresh[2])
+    
     while True:
         timestamp, img = cvsink.grabFrame(img)
         if timestamp == 0:
@@ -631,10 +690,9 @@ if __name__ == '__main__':
         #  7. inner port (0/1)
         #  8. instantaneous FPS
         print(result)
+        # print(processor.upper_thresh)
         if USE_SMART_DASHBOARD:
             smart_dashboard.putNumberArray('Vision/result', result)
-            smart_dashboard.putNumberArray('Vision/upper_thresh', processor.upper_thresh)
-            smart_dashboard.putNumberArray('Vision/lower_thresh', processor.lower_thresh)
         # Not sure if I need this. It might decrease the lag time of
         #  updating the NetworkTables, but it's untested.
         # ntinst.flush()

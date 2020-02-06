@@ -5,7 +5,8 @@ from vision_processing_2020 import BallProcessing
 
 def run_with_image(num):
     img = cv2.imread(f'C:\\workspace\\Vision2020\\Power Cell Images\\frame_{num}.png')
-    processor = BallProcessing()
+    height, width = img.shape[:2]
+    processor = BallProcessing(width, height)
     _, img = processor.process_image(img)
     cv2.imshow('Image', img)
     cv2.waitKey(0)
@@ -41,5 +42,5 @@ def run_with_video(num):
         cv2.destroyAllWindows()
 
 
-# run_with_image('00050')
+run_with_image('00050')
 # run_with_video('5602')
