@@ -127,9 +127,6 @@ class BallProcessing(ProcessorBase):
         self.upper_thresh = 40, 255, 255
         self.view_thresh = view_thresh
 
-    def set_upper_sat(self, value):
-        self.upper_thresh = self.upper_thresh[0], value, self.upper_thresh[1]
-
     def process_image(self, frame):
         frame = cv2.blur(frame, (3, 3))
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -171,7 +168,6 @@ class BallProcessing(ProcessorBase):
 
     def _process_vecs(self, tvec, rvec):
         x = tvec[0][0]
-        y = tvec[1][0]
         z = tvec[2][0]
 
         distance = math.sqrt(x**2 + z**2)
@@ -553,28 +549,66 @@ if __name__ == '__main__':
             | ntcore.constants.NT_NOTIFY_NEW
             | ntcore.constants.NT_NOTIFY_UPDATE
         )
-        smart_dashboard.getEntry('Vision/set_upper_thresh').addListener(
-            set_upper_thresh,
-            ntcore.constants.NT_NOTIFY_IMMEDIATE
-            | ntcore.constants.NT_NOTIFY_NEW
-            | ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/set_lower_thresh').addListener(
-            set_lower_thresh,
-            ntcore.constants.NT_NOTIFY_IMMEDIATE
-            | ntcore.constants.NT_NOTIFY_NEW
-            | ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        def set_upper_sat(fromobj, key, value, isNew):
-            processor.set_upper_sat(value)
-            smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
-            print(f'Update to {value}')
-        smart_dashboard.getEntry('Vision/Threshhold/Upper/saturation').addListener(
-            set_upper_sat,
-            ntcore.constants.NT_NOTIFY_IMMEDIATE
-            | ntcore.constants.NT_NOTIFY_UPDATE
-        )
 
+        # Remove this if the code below it works
+        # def set_upper_hue(fromobj, key, value, isNew):
+        #     processor.upper_thresh = (value,
+        #                               processor.upper_thresh[1],
+        #                               processor.upper_thresh[2])
+        #     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue',
+        #                               processor.upper_thresh[0])
+        # smart_dashboard.getEntry('Vision/Threshhold/Upper/hue').addListener(
+        #     set_upper_hue,
+        #     ntcore.constants.NT_NOTIFY_IMMEDIATE
+        #     | ntcore.constants.NT_NOTIFY_UPDATE
+        # )
+
+        def set_threshhold_value(lower_upper, name):
+            def setter(fromobj, key, value, isNew):
+                if lower_upper == 'lower':
+                    thresh = processor.lower_thresh
+                elif lower_upper == 'upper':
+                    thresh = processor.upper_thresh
+
+                if name == 'hue':
+                    thresh = value, thresh[1], thresh[2]
+                elif name == 'saturation':
+                    thresh = thresh[0], value, thresh[2]
+                elif name == 'value':
+                    thresh = thresh[0], thresh[1], value
+
+                if lower_upper == 'lower':
+                    processor.lower_thresh = thresh
+                elif lower_upper == 'upper':
+                    processor.upper_thresh = thresh
+
+                smart_dashboard.putNumber(f'Vision/Threshhold/{lower_upper}/{name}')
+            return setter
+
+        smart_dashboard.getEntry('Vision/Threshhold/Upper/hue').addListener(
+            set_threshhold_value('upper', 'hue'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/Threshhold/Upper/saturation').addListener(
+            set_threshhold_value('upper', 'saturation'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/Threshhold/Upper/value').addListener(
+            set_threshhold_value('upper', 'value'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/Threshhold/Lower/hue').addListener(
+            set_threshhold_value('lower', 'hue'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/Threshhold/Lower/saturation').addListener(
+            set_threshhold_value('lower', 'saturation'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
+        smart_dashboard.getEntry('Vision/Threshhold/Lower/value').addListener(
+            set_threshhold_value('lower', 'value'),
+            ntcore.constants.NT_NOTIFY_UPDATE
+        )
 
     # Find primary and secondary cameras
     cameras = []
@@ -653,14 +687,14 @@ if __name__ == '__main__':
                                  draw_img=USE_MODIFIED_IMAGE)
     processor = BallProcessing(config['width'], config['height'])
     img = np.zeros(shape=(config['height'], config['width'], 3), dtype=np.uint8)
-    
+
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/value', processor.upper_thresh[2])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/hue', processor.lower_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/saturation', processor.lower_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/value', processor.lower_thresh[2])
-    
+
     while True:
         timestamp, img = cvsink.grabFrame(img)
         if timestamp == 0:

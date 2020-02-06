@@ -1,3 +1,6 @@
+# Video files I thre in for testing that are too large fot GitHub
+*.mov
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
