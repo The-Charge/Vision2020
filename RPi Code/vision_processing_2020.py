@@ -122,9 +122,8 @@ class BallProcessing(ProcessorBase):
             [0, 3.5, 0],
         ])
 
-        self.lower_thresh = 0, 60, 120
-        self.lower_thresh = 0, 30, 60
-        self.upper_thresh = 40, 255, 255
+        self.lower_thresh = 20, 40, 0
+        self.upper_thresh = 45, 230, 255
         self.view_thresh = view_thresh
 
     def process_image(self, frame):
@@ -200,7 +199,7 @@ class TargetProcessing(ProcessorBase):
     called is the process_image method.
     """
 
-    def __init__(self, camera_w, camera_h, draw_img=False):
+    def __init__(self, camera_w, camera_h, draw_img=False, view_thresh=False):
         """Initialize camera and distrortion matrices and object cordinates."""
 
         # Create camera matrix
@@ -262,10 +261,11 @@ class TargetProcessing(ProcessorBase):
 
         # Wether to return a marked up image. Testing only.
         self.draw_img = draw_img
+        self.view_thresh = view_thresh
 
         # The threshold for checking images.
-        self.lower_thresh = 40, 0, 90
-        self.upper_thresh = 90, 255, 255
+        self.lower_thresh = 25, 200, 50
+        self.upper_thresh = 90, 255, 230
         self.home_lower_thresh = 20, 0, 15
         self.home_upper_thresh = 60, 255, 255
 
@@ -346,9 +346,13 @@ class TargetProcessing(ProcessorBase):
             # Return 1(success) and values. Return the frame that may or
             #  may not have been modified.
             result = (1, round(distance), round(horizontal_angle), round(vertical_angle), round(alignment_angle), inner)
+            if self.view_thresh:
+                return result, thresh
             return result, frame
 
         # If no contours, return all zeros and original frame
+        if self.view_thresh:
+            return (0, 0, 0, 0, 0, 0), thresh
         return (0, 0, 0, 0, 0, 0), frame
 
     def set_lower_threshold(self, h, s, v):
@@ -550,19 +554,6 @@ if __name__ == '__main__':
             | ntcore.constants.NT_NOTIFY_UPDATE
         )
 
-        # Remove this if the code below it works
-        # def set_upper_hue(fromobj, key, value, isNew):
-        #     processor.upper_thresh = (value,
-        #                               processor.upper_thresh[1],
-        #                               processor.upper_thresh[2])
-        #     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue',
-        #                               processor.upper_thresh[0])
-        # smart_dashboard.getEntry('Vision/Threshhold/Upper/hue').addListener(
-        #     set_upper_hue,
-        #     ntcore.constants.NT_NOTIFY_IMMEDIATE
-        #     | ntcore.constants.NT_NOTIFY_UPDATE
-        # )
-
         def set_threshhold_value(lower_upper, name):
             def setter(fromobj, key, value, isNew):
                 if lower_upper == 'lower':
@@ -684,8 +675,8 @@ if __name__ == '__main__':
         mjpeg_server.setSource(cvsource)
 
     processor = TargetProcessing(config['width'], config['height'],
-                                 draw_img=USE_MODIFIED_IMAGE)
-    processor = BallProcessing(config['width'], config['height'])
+                                 draw_img=USE_MODIFIED_IMAGE, view_thresh=False)
+    # processor = BallProcessing(config['width'], config['height'])
     img = np.zeros(shape=(config['height'], config['width'], 3), dtype=np.uint8)
 
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
@@ -707,7 +698,10 @@ if __name__ == '__main__':
         # The elapsed time is really only for testing to determine the
         #  optimal image resolution and speed.
         start_time = time.time()
-        result, img = processor.process_image(img)
+        try:
+            result, img = processor.process_image(img)
+        except:
+            continue
         if USE_MODIFIED_IMAGE:
             cvsource.putFrame(img)
         end_time = time.time()
