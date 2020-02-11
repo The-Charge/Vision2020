@@ -22,7 +22,7 @@ server = None
 camera_configs = []
 cameras = []
 
-USE_MODIFIED_IMAGE = True
+USE_MODIFIED_IMAGE = False
 PAUSE = False
 USE_SMART_DASHBOARD = True
 processor = None
@@ -648,18 +648,16 @@ if __name__ == '__main__':
         print('Running!')
 
     # Start mjpeg_server
-    port = 1181
-    mjpeg_server = MjpegServer('Vision Server', port)
-    # If you ever need to standardize resolutions between cameras, you
-    #  can use the following. It's bad though, because then it
-    #  uncompresses and resises all images, so it decreases FPS.
-    # mjpeg_server.setResolution(640, 480)
-    # mjpeg_server.setCompression(70)
+    mjpeg_server = MjpegServer('Vision Server', 1181)
+    mjpeg_server_2 = MjpegServer('Vision Server', 1182)
 
     # Start camera loop
     driver_camera = driver_cameras[0]
     driver_camera[1].setEnabled(True)
     mjpeg_server.setSource(driver_camera[0])
+    driver_camera = driver_cameras[1]
+    driver_camera[1].setEnabled(True)
+    mjpeg_server_2.setSource(driver_camera[0])
 
     camera, cvsink, config = vision_camera
     cvsink.setEnabled(True)
