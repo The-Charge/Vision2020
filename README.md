@@ -8,7 +8,7 @@ You can view the official documentation [here](https://wpilib.screenstepslive.co
 Make sure you have enough power supplied to the Pi, or else it will randomly crash and cause many issues. The official requirements are found [here](https://www.raspberrypi.org/documentation/hardware/raspberrypi/power/README.md), but in short for the Raspberry Pi 3 it's 5V & 2.5A.
 
 ### Connecting to the Pi
-When connecting over ethernet, you first have to change your ethernet connection settings. Right click on the wifi icon and select `Open Network & Internet Settings`. Then select `Change Adapter Options` and double click into the ethernet port that you're using. Select `Properties` and then select the properties of `Internet Protocol Version 4 (TCP/IPv4)`. Change the IP address to `10.26.19.5` and the subnet mask to `255.0.0.0`. The other settings shouldn't need to be changed. You can also select the option entitled `DHCP` which doesn't require you to change any ethernet settings, but while DHCP worked for most competitions it broke for our off-season one.
+When connecting over ethernet, you first have to change your ethernet connection settings. Right click on the wifi icon and select `Open Network & Internet Settings`. Then select `Change Adapter Options` and double click into the ethernet port that you're using. Select `Properties` and then select the properties of `Internet Protocol Version 4 (TCP/IPv4)`. Change the IP address to `10.26.19.5` and the subnet mask to `255.0.0.0`. Make sure you exit out of all of tabs in the interface, for some wierd reason it doesn't save if you don't. The other settings shouldn't need to be changed. You can also select the option entitled `DHCP` which doesn't require you to change any ethernet settings, but while DHCP worked for most competitions it broke for our off-season one.
 
 To connect to the dashboard go to `frcvision.local/` or if that doesn't work the IP address of the Pi, so `10.26.19.12/`.
 
@@ -26,6 +26,9 @@ I've had a lot of trouble with saving the camera parameters. Properties such as 
 
 ### Network tables
 You can view the NetworkTables and edit them on the Pi without connecting to the robot by using the Pi in server mode, and then using OutlineViewer and connect to `10.26.19.12`.
+
+## Bandwidth Monitoring
+It can be useful to monitor your bandwith to see what resolution camera you can safely use and stay within the limits. By default, FRC radios enforce the 4Mbs limit, but if you have an older radio you'll need to change that yourself. The application `Performance Monitor` on Windows 10 is useful for monitoring bandwith. When it's open, hit the green plus and select `Network Interface`. Delete anythin but total bytes per second and resize the graph axes and you can see your bandwidth usage.
 
 ## Machine Learning
 
