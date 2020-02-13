@@ -16,16 +16,13 @@ import numpy as np
 import cv2
 
 config_file = '/boot/frc.json'
-
 team = None
 server = None
 camera_configs = []
 cameras = []
-
-USE_MODIFIED_IMAGE = False
-PAUSE = False
-USE_SMART_DASHBOARD = True
+USE_MODIFIED_IMAGE = True
 processor = None
+smart_dashboard = None
 
 
 class ProcessorBase:
@@ -90,6 +87,7 @@ class ProcessorBase:
         return cv2.warpAffine(img, R, (nW, nH))
 
     def label_cnt(self, img, cnt, text):
+        """Add a text label directly above a given contour."""
         text = str(text)
         font = cv2.FONT_HERSHEY_SIMPLEX
         size, _ = cv2.getTextSize(text, font, 1, 1)
@@ -101,93 +99,6 @@ class ProcessorBase:
 
         cv2.rectangle(img, point, point_2, self.BLACK, -1)
         cv2.putText(img, text, point, font, 1, self.WHITE, 1, cv2.LINE_AA)
-
-
-class BallProcessing(ProcessorBase):
-    """A processor class that would find a power core in an image. WIP."""
-    def __init__(self, camera_w, camera_h, view_thresh=True):
-        # Create camera matrix
-        self.dist_matrix = np.zeros((4, 1))
-        focal_length = camera_w  # width of camera
-        center = camera_w // 2, camera_h // 2
-        self.camera_matrix = np.array(
-            [[focal_length, 0, center[0]],
-             [0, focal_length, center[1]],
-             [0, 0, 1]], dtype='double')
-
-        self.obj_points = np.array([
-            [-3.5, 0, 0],
-            [0, -3.5, 0],
-            [3.5, 0, 0],
-            [0, 3.5, 0],
-        ])
-
-        self.lower_thresh = 20, 40, 0
-        self.upper_thresh = 45, 230, 255
-        self.view_thresh = view_thresh
-
-    def process_image(self, frame):
-        frame = cv2.blur(frame, (3, 3))
-        img = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-
-        thresh = cv2.inRange(img, self.lower_thresh, self.upper_thresh)
-        # cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE) # PC testing only
-        _, cnts, _ = cv2.findContours(thresh, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-
-        cnts = self._get_valid(cnts)
-        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x), reverse=True)
-
-        result = [0, 0, 0]
-        if len(cnts) > 0:
-            cnt = cnts[0]
-            c, r = cv2.minEnclosingCircle(cnt)
-            c = int(c[0]), int(c[1])
-            r = int(r)
-
-            points = np.array([
-                np.array([c[0] - r, c[1]]),
-                np.array([c[0], c[1] - r]),
-                np.array([c[0] + r, c[1]]),
-                np.array([c[0], c[1] + 1]),
-            ], dtype='float')
-
-            _, rvec, tvec = cv2.solvePnP(self.obj_points, points,
-                                         self.camera_matrix, self.dist_matrix)
-            result = self._process_vecs(tvec, rvec)
-
-            cv2.drawContours(frame, [cnt], 0, self.GREEN, 2)
-            cv2.circle(frame, c, r, self.RED, 2)
-
-            self.label_cnt(frame, cnt, round(result[0]))
-
-            result = [1, result[0], result[1]]
-        if self.view_thresh:
-            return result, thresh
-        return result, frame
-
-    def _process_vecs(self, tvec, rvec):
-        x = tvec[0][0]
-        z = tvec[2][0]
-
-        distance = math.sqrt(x**2 + z**2)
-        horizontal_angle = math.degrees(math.atan2(x, z))
-
-        return horizontal_angle, distance
-
-    def _get_valid(self, cnts):
-        valid = []
-        for cnt in cnts:
-            if len(cnt) <= 5 or cv2.contourArea(cnt) < 200:
-                continue
-
-            _, r = cv2.minEnclosingCircle(cnt)
-            area = math.pi * (r**2)
-            cnt_area = cv2.contourArea(cnt)
-            if cnt_area / area < .7:
-                continue
-
-            valid.append(cnt)
-        return valid
 
 
 class TargetProcessing(ProcessorBase):
@@ -355,12 +266,6 @@ class TargetProcessing(ProcessorBase):
             return (0, 0, 0, 0, 0, 0), thresh
         return (0, 0, 0, 0, 0, 0), frame
 
-    def set_lower_threshold(self, h, s, v):
-        self.lower_thresh = h, s, v
-
-    def set_upper_threshold(self, h, s, v):
-        self.upper_thresh = h, s, v
-
     def _process_vecs(self, tvec, rvec):
         """Turn rvec and tvec into distance and angles."""
         x = tvec[0][0]
@@ -498,34 +403,29 @@ def read_config():
     return True
 
 
-def camera_listener(fromobj, key, value, isNew):
-    """Stream camera i in driver_cameras whenever value is changed."""
-    global driver_cameras, mjpeg_server
-    value = int(value)
-    value = min(max(0, value), len(driver_cameras) - 1)
-    if value < len(driver_cameras):
-        for _, sink, _ in driver_cameras:
-            sink.setEnabled(False)
-        cam, sink, config = driver_cameras[int(value)]
-        sink.setEnabled(True)
-        mjpeg_server.setSource(cam)
-        smart_dashboard.putString('Vision/current_camera_name', config['name'])
-        smart_dashboard.putString('Vision/current_camera_id', value)
+# Add listener to control which camera is streaming
+def set_threshhold_value(lower_upper, name):
+    """This is a factory function that returns a reference to a function that will update the correct NetworkTables value."""
+    def setter(fromobj, key, value, isNew):
+        if lower_upper == 'lower':
+            thresh = processor.lower_thresh
+        elif lower_upper == 'upper':
+            thresh = processor.upper_thresh
 
+        if name == 'hue':
+            thresh = value, thresh[1], thresh[2]
+        elif name == 'saturation':
+            thresh = thresh[0], value, thresh[2]
+        elif name == 'value':
+            thresh = thresh[0], thresh[1], value
 
-def set_lower_thresh(fromobj, key, value, isNew):
-    """Set the lower threshold for the target detection."""
-    global processor
-    if processor is not None:
-        print(value)
-        processor.set_lower_threshold(*value)
+        if lower_upper == 'lower':
+            processor.lower_thresh = thresh
+        elif lower_upper == 'upper':
+            processor.upper_thresh = thresh
 
-
-def set_upper_thresh(fromobj, key, value, isNew):
-    global processor
-    if processor is not None:
-        print(value)
-        processor.set_upper_thresh(*value)
+        smart_dashboard.putNumber(f'Vision/Threshhold/{lower_upper}/{name}')
+    return setter
 
 
 if __name__ == '__main__':
@@ -545,157 +445,63 @@ if __name__ == '__main__':
         print('Setting up NetworkTables client for team {}'.format(team))
         ntinst.startClientTeam(team)
     smart_dashboard = ntinst.getTable('SmartDashboard')
-    # Add listener to control which camera is streaming
-    if USE_SMART_DASHBOARD:
-        smart_dashboard.getEntry('Vision/camera_id').addListener(
-            camera_listener,
-            ntcore.constants.NT_NOTIFY_IMMEDIATE
-            | ntcore.constants.NT_NOTIFY_NEW
-            | ntcore.constants.NT_NOTIFY_UPDATE
-        )
 
-        def set_threshhold_value(lower_upper, name):
-            def setter(fromobj, key, value, isNew):
-                if lower_upper == 'lower':
-                    thresh = processor.lower_thresh
-                elif lower_upper == 'upper':
-                    thresh = processor.upper_thresh
-
-                if name == 'hue':
-                    thresh = value, thresh[1], thresh[2]
-                elif name == 'saturation':
-                    thresh = thresh[0], value, thresh[2]
-                elif name == 'value':
-                    thresh = thresh[0], thresh[1], value
-
-                if lower_upper == 'lower':
-                    processor.lower_thresh = thresh
-                elif lower_upper == 'upper':
-                    processor.upper_thresh = thresh
-
-                smart_dashboard.putNumber(f'Vision/Threshhold/{lower_upper}/{name}')
-            return setter
-
-        smart_dashboard.getEntry('Vision/Threshhold/Upper/hue').addListener(
-            set_threshhold_value('upper', 'hue'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/Threshhold/Upper/saturation').addListener(
-            set_threshhold_value('upper', 'saturation'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/Threshhold/Upper/value').addListener(
-            set_threshhold_value('upper', 'value'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/Threshhold/Lower/hue').addListener(
-            set_threshhold_value('lower', 'hue'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/Threshhold/Lower/saturation').addListener(
-            set_threshhold_value('lower', 'saturation'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-        smart_dashboard.getEntry('Vision/Threshhold/Lower/value').addListener(
-            set_threshhold_value('lower', 'value'),
-            ntcore.constants.NT_NOTIFY_UPDATE
-        )
-
-    # Find primary and secondary cameras
-    cameras = []
+    # Find the vision camera
+    camera = None
     for config in camera_configs:
-        camera = UsbCamera(config.name, config.path)
-        camera.setConfigJson(json.dumps(config.config))
+        if config.config['name'].lower() == 'vision':
+            camera = UsbCamera(config.name, config.path)
+            camera.setConfigJson(json.dumps(config.config))
+            cvsink = CvSink('cvsink: ' + config.name)
+            cvsink.setSource(camera)
+            cvsink.setEnabled(True)
 
-        cvsink = CvSink('cvsink: ' + config.name)
-        cvsink.setSource(camera)
-        cvsink.setEnabled(False)  # disable frame fetching by default
+    # Make sure there is a Vision camera. If an error is raised, it will reboot the system
+    assert camera is not None, 'No vision camera detected, make sure it is named "Vision" exactly'
 
-        # Add 3 things to the list of cameras: the camera object itself,
-        #  the cvsink object, and the camera configuration dictionary.
-        #  The first two all the only ones actually needed. Two stream
-        #  the camera you can use in server.setsource(cam), and the
-        #  cvsink is used to enable fetching frames. config.config is
-        #  only used to access configuration information like the name
-        #  and resolution.
-        cameras.append((camera, cvsink, config.config))
-
-    vision_camera = None
-    driver_cameras = []
-    for camera in cameras:
-        # The camera wanted for vision must be named 'Vision' exactly,
-        #  because that's how I distinguish between them. The driver
-        #  cameras can be named anything.
-        if camera[2]['name'] == 'Vision':
-            vision_camera = camera
-        else:
-            driver_cameras.append(camera)
-
-    vision_camera_name = vision_camera[2]['name']
-    driver_camera_list = ', '.join(
-        [config['name'] for _, _, config in driver_cameras])
-    print('Vision camera: ' + vision_camera_name)
-    print('Driver cameras: ' + driver_camera_list)
-    if USE_SMART_DASHBOARD:
-        smart_dashboard.putString('Vision/vision_camera', vision_camera_name)
-        smart_dashboard.putString('Vision/driver_cameras', driver_camera_list)
-
-    # This is only for debugging, as once I print out a bunch of values
-    #  it's hard to see that the initial setup went correctly.
-    if PAUSE:
-        print('Waiting...')
-        time.sleep(5)
-        print('Running!')
-
-    # Start mjpeg_server
-    mjpeg_server = MjpegServer('Vision Server', 1181)
-    mjpeg_server_2 = MjpegServer('Vision Server', 1182)
-
-    # Start camera loop
-    driver_camera = driver_cameras[0]
-    driver_camera[1].setEnabled(True)
-    mjpeg_server.setSource(driver_camera[0])
-    driver_camera = driver_cameras[1]
-    driver_camera[1].setEnabled(True)
-    mjpeg_server_2.setSource(driver_camera[0])
-
-    camera, cvsink, config = vision_camera
-    cvsink.setEnabled(True)
+    name = config.config['name']
+    width = config.config['height']
+    height = config.config['width']
+    fps = config.config['fps']
 
     # This code creates a cvsink which will push a modified image to the
     #  MJPEG stream. Testing only.
     if USE_MODIFIED_IMAGE:
-        name = 'cvsource: ' + vision_camera[2]['name']
-        width = vision_camera[2]['height']
-        height = vision_camera[2]['width']
-        fps = vision_camera[2]['fps']
+        name = f'cvsource: {name}'
         cvsource = CvSource(name, VideoMode.PixelFormat.kMJPEG, width, height, fps)
+        mjpeg_server = MjpegServer('Vision Stream', 1181)
         mjpeg_server.setSource(cvsource)
 
-    processor = TargetProcessing(config['width'], config['height'],
+    # Create the processor
+    processor = TargetProcessing(width, height,
                                  draw_img=USE_MODIFIED_IMAGE, view_thresh=False)
-    # processor = BallProcessing(config['width'], config['height'])
-    img = np.zeros(shape=(config['height'], config['width'], 3), dtype=np.uint8)
 
+    # Add NetworkTables listeners
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/value', processor.upper_thresh[2])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/hue', processor.lower_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/saturation', processor.lower_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Lower/value', processor.lower_thresh[2])
+    for upper_lower in ['Upper', 'Lower']:
+        for value in ['hue', 'saturation', 'value']:
+            smart_dashboard.getEntry(f'Vision/Threshhold/{upper_lower}/{value}').addListener(
+                set_threshhold_value(upper_lower, value),
+                ntcore.constants.NT_NOTIFY_UPDATE
+            )
 
+    # Preallocate an image
+    img = np.zeros(shape=(height, width, 3), dtype=np.uint8)
     while True:
+        # Get the most recent image, if there's an error skip processing on that loop
         timestamp, img = cvsink.grabFrame(img)
         if timestamp == 0:
-            error_msg = 'Error: ' + str(cvsink.getError())
-            print(error_msg)
-            if USE_SMART_DASHBOARD:
-                smart_dashboard.putString('Vision/errors', error_msg)
+            print(f'Error: {cvsink.getError()}')
             continue
 
-        # The elapsed time is really only for testing to determine the
-        #  optimal image resolution and speed.
+        # The elapsed time is really only for testing to determine the optimal image resolution and speed
         start_time = time.time()
+        # Used in case my processing throws an error. It ofen does when the target's obscured and I was unable to fix it so this is my solution
         try:
             result, img = processor.process_image(img)
         except:
@@ -703,9 +509,11 @@ if __name__ == '__main__':
         if USE_MODIFIED_IMAGE:
             cvsource.putFrame(img)
         end_time = time.time()
-        fps = 1 / (end_time - start_time)
+        fps = round(1 / (end_time - start_time))  # This is only a rough estimate of the FPS, useful for debuging
 
-        result = timestamp, *result, round(fps)
+        result = end_time, *result, fps
+        smart_dashboard.putNumberArray('Vision/result', result)
+
         # Result key:
         #  1. timestamp
         #  2. success (0/1)
@@ -715,10 +523,3 @@ if __name__ == '__main__':
         #  6. alignment angle
         #  7. inner port (0/1)
         #  8. instantaneous FPS
-        print(result)
-        # print(processor.upper_thresh)
-        if USE_SMART_DASHBOARD:
-            smart_dashboard.putNumberArray('Vision/result', result)
-        # Not sure if I need this. It might decrease the lag time of
-        #  updating the NetworkTables, but it's untested.
-        # ntinst.flush()
