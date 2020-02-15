@@ -20,9 +20,12 @@ team = None
 server = None
 camera_configs = []
 cameras = []
-USE_MODIFIED_IMAGE = True
 processor = None
 smart_dashboard = None
+
+# Debug Parameters:
+USE_MODIFIED_IMAGE = True
+VIEW_THRESH = True
 
 
 class ProcessorBase:
@@ -115,6 +118,8 @@ class TargetProcessing(ProcessorBase):
 
         # Create camera matrix
         self.dist_matrix = np.zeros((4, 1))
+        # self.dist_matrix = np.array([0.04552071, 0.04272384, -0.04372332, -0.01320229, -0.03508031])
+        # camera_w, camera_h = 640, 480
         focal_length = camera_w  # width of camera
         center = camera_w // 2, camera_h // 2
         self.camera_matrix = np.array(
@@ -175,10 +180,8 @@ class TargetProcessing(ProcessorBase):
         self.view_thresh = view_thresh
 
         # The threshold for checking images.
-        self.lower_thresh = 25, 200, 50
-        self.upper_thresh = 90, 255, 230
-        self.home_lower_thresh = 20, 0, 15
-        self.home_upper_thresh = 60, 255, 255
+        self.lower_thresh = 40, 20, 20
+        self.upper_thresh = 90, 230, 255
 
         # The minimum alignment angle needed to target the inner port.
         self.minimum_alignment = 20
@@ -407,24 +410,24 @@ def read_config():
 def set_threshhold_value(lower_upper, name):
     """This is a factory function that returns a reference to a function that will update the correct NetworkTables value."""
     def setter(fromobj, key, value, isNew):
-        if lower_upper == 'lower':
+        if lower_upper.lower() == 'lower':
             thresh = processor.lower_thresh
-        elif lower_upper == 'upper':
+        elif lower_upper.lower() == 'upper':
             thresh = processor.upper_thresh
 
-        if name == 'hue':
+        if name.lower() == 'hue':
             thresh = value, thresh[1], thresh[2]
-        elif name == 'saturation':
+        elif name.lower() == 'saturation':
             thresh = thresh[0], value, thresh[2]
-        elif name == 'value':
+        elif name.lower() == 'value':
             thresh = thresh[0], thresh[1], value
 
-        if lower_upper == 'lower':
+        if lower_upper.lower() == 'lower':
             processor.lower_thresh = thresh
-        elif lower_upper == 'upper':
+        elif lower_upper.lower() == 'upper':
             processor.upper_thresh = thresh
 
-        smart_dashboard.putNumber(f'Vision/Threshhold/{lower_upper}/{name}')
+        smart_dashboard.putNumber(f'Vision/Threshhold/{lower_upper}/{name}', value)
     return setter
 
 
@@ -474,7 +477,7 @@ if __name__ == '__main__':
 
     # Create the processor
     processor = TargetProcessing(width, height,
-                                 draw_img=USE_MODIFIED_IMAGE, view_thresh=False)
+                                 draw_img=USE_MODIFIED_IMAGE, view_thresh=VIEW_THRESH)
 
     # Add NetworkTables listeners
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
@@ -500,6 +503,7 @@ if __name__ == '__main__':
             continue
 
         # The elapsed time is really only for testing to determine the optimal image resolution and speed
+        processor.view_thresh = smart_dashboard.getBoolean('Vision/view_thresh', False)
         start_time = time.time()
         # Used in case my processing throws an error. It ofen does when the target's obscured and I was unable to fix it so this is my solution
         try:
