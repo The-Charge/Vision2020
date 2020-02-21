@@ -121,6 +121,7 @@ class TargetProcessing(ProcessorBase):
         # self.dist_matrix = np.array([0.04552071, 0.04272384, -0.04372332, -0.01320229, -0.03508031])
         # camera_w, camera_h = 640, 480
         focal_length = camera_w  # width of camera
+        camera_w, camera_h = max(camera_w, camera_h), min(camera_w, camera_h)
         center = camera_w // 2, camera_h // 2
         self.camera_matrix = np.array(
             [[focal_length, 0, center[0]],
@@ -141,26 +142,6 @@ class TargetProcessing(ProcessorBase):
             [9.8, -17, 29.25],
             [19.6, 0, 29.25],
         ])
-        self.outer_obj_points_8gon = np.array([
-            [-19.6, 0, 0],
-            [-9.8, -17, 0],
-            [9.8, -17, 0],
-            [19.6, 0, 0],
-            [17.3, 0, 0],
-            [8.6, -15, 0],
-            [-8.6, -15, 0],
-            [-17.3, 0, 0],
-        ])
-        self.inner_obj_points_8gon = np.array([
-            [-19.6, 0, 29.25],
-            [-9.8, -17, 29.25],
-            [9.8, -17, 29.25],
-            [19.6, 0, 29.25],
-            [17.3, 0, 29.25],
-            [8.6, -15, 29.25],
-            [-8.6, -15, 29.25],
-            [-17.3, 0, 29.25],
-        ])
 
         # This should be the distance from the turret, in the same unit
         #  as obj_points(inches). x_offset is positive to the right and
@@ -180,14 +161,16 @@ class TargetProcessing(ProcessorBase):
         self.view_thresh = view_thresh
 
         # The threshold for checking images.
-        self.lower_thresh = 40, 20, 20
-        self.upper_thresh = 90, 230, 255
+        self.lower_thresh = 60, 90, 120
+        self.upper_thresh = 100, 255, 255
 
         # The minimum alignment angle needed to target the inner port.
         self.minimum_alignment = 20
 
         # Used when finding the approximate polygon.
         self.epsilon_adjust = 0.05
+
+        self.distances = []
 
     def process_image(self, frame):
         """Take an image, isolate the target, and return the calculated values."""
@@ -204,19 +187,19 @@ class TargetProcessing(ProcessorBase):
 
         # Filter contours
         cnts = self._get_valid_cnts(cnts)
-        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x), reverse=True)
+        cnts = sorted(cnts, key=lambda x: cv2.contourArea(x[1]), reverse=True)
 
         if len(cnts) > 0:
             # If a contour is present, use the largest/closest one
-            cnt = cnts[0]
+            cnt, hull = cnts[0]
 
             # Maybe this will stop there being a fifth point in the middle of a straight line
-            epsilon = 0.01 * cv2.arcLength(cnt, True)
-            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            # epsilon = 0.01 * cv2.arcLength(cnt, True)
+            # approx = cv2.approxPolyDP(cnt, epsilon, True)
 
-            hull = cv2.convexHull(approx)
-            epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
-            hull = cv2.approxPolyDP(hull, epsilon, True)
+            # hull = cv2.convexHull(approx)
+            # epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
+            # hull = cv2.approxPolyDP(hull, epsilon, True)
             points = np.array([
                 hull[3][0],
                 hull[2][0],
@@ -229,6 +212,11 @@ class TargetProcessing(ProcessorBase):
             tvec[2][0] += self.z_offset
             tvec[0][0] += self.x_offset
             distance, horizontal_angle, vertical_angle, alignment_angle = self._process_vecs(tvec, rvec)
+            self.distances.append(distance)
+            if len(self.distances) > 10:
+                self.distances = self.distances[1:]
+            distance = sum(self.distances) / 10
+            
             inner = 0  # whether coordinates refer to inner port
 
             if self.draw_img:
@@ -238,7 +226,6 @@ class TargetProcessing(ProcessorBase):
                        (hull[0][0][1] + hull[3][0][1]) // 2)
                 cv2.circle(frame, mid, 3, self.RED, -1)
                 cv2.circle(frame, mid, 10, self.RED, 1)
-                cv2.drawContours(frame, [approx], 0, self.YELLOW, 1)
                 cv2.drawContours(frame, [hull], 0, self.RED, 1)
 
                 for point in hull:
@@ -307,7 +294,7 @@ class TargetProcessing(ProcessorBase):
             if len(hull) < 4:
                 continue
 
-            valid.append(cnt)
+            valid.append((cnt, hull))
         return valid
 
 
@@ -508,7 +495,8 @@ if __name__ == '__main__':
         # Used in case my processing throws an error. It ofen does when the target's obscured and I was unable to fix it so this is my solution
         try:
             result, img = processor.process_image(img)
-        except:
+        except Exception as e:
+            print(e)
             continue
         if USE_MODIFIED_IMAGE:
             cvsource.putFrame(img)
