@@ -8,6 +8,7 @@ import json
 import time
 import sys
 import math
+from statistics import median
 
 from cscore import UsbCamera, MjpegServer, CvSink, CvSource, VideoMode
 from networktables import NetworkTablesInstance
@@ -161,7 +162,7 @@ class TargetProcessing(ProcessorBase):
         self.view_thresh = view_thresh
 
         # The threshold for checking images.
-        self.lower_thresh = 60, 90, 120
+        self.lower_thresh = 60, 90, 60
         self.upper_thresh = 100, 255, 255
 
         # The minimum alignment angle needed to target the inner port.
@@ -171,6 +172,8 @@ class TargetProcessing(ProcessorBase):
         self.epsilon_adjust = 0.05
 
         self.distances = []
+        self.alignment_angles = []
+        self.list_limit = 5
 
     def process_image(self, frame):
         """Take an image, isolate the target, and return the calculated values."""
@@ -212,10 +215,15 @@ class TargetProcessing(ProcessorBase):
             tvec[2][0] += self.z_offset
             tvec[0][0] += self.x_offset
             distance, horizontal_angle, vertical_angle, alignment_angle = self._process_vecs(tvec, rvec)
+            
             self.distances.append(distance)
-            if len(self.distances) > 10:
+            if len(self.distances) > self.list_limit:
                 self.distances = self.distances[1:]
-            distance = sum(self.distances) / 10
+            distance = sum(self.distances) / self.list_limit
+            self.alignment_angles.append(alignment_angle)
+            if len(self.alignment_angles) > self.list_limit:
+                self.alignment_angles = self.alignment_angles[1:]
+            alignment_angle = median(self.alignment_angles)
             
             inner = 0  # whether coordinates refer to inner port
 
@@ -292,6 +300,10 @@ class TargetProcessing(ProcessorBase):
             epsilon = self.epsilon_adjust * cv2.arcLength(hull, True)
             hull = cv2.approxPolyDP(hull, epsilon, True)
             if len(hull) < 4:
+                continue
+            
+            solidity = cv2.contourArea(cnt) / cv2.contourArea(hull)
+            if solidity > .75:
                 continue
 
             valid.append((cnt, hull))
@@ -467,6 +479,7 @@ if __name__ == '__main__':
                                  draw_img=USE_MODIFIED_IMAGE, view_thresh=VIEW_THRESH)
 
     # Add NetworkTables listeners
+    smart_dashboard.putBoolean('Vision/view_thresh', False)
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/value', processor.upper_thresh[2])
