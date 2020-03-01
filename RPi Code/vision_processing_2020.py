@@ -254,7 +254,7 @@ class TargetProcessing(ProcessorBase):
 
             # Return 1(success) and values. Return the frame that may or
             #  may not have been modified.
-            result = (1, round(distance), round(horizontal_angle), round(vertical_angle), round(alignment_angle), inner)
+            result = (1, distance, horizontal_angle, vertical_angle, alignment_angle, inner)
             if self.view_thresh:
                 return result, thresh
             return result, frame
