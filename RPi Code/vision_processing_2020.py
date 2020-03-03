@@ -174,6 +174,8 @@ class TargetProcessing(ProcessorBase):
         self.distances = []
         self.alignment_angles = []
         self.list_limit = 5
+        self.angle_adjust = 0
+        self.solidity_limit = 0.75
 
     def process_image(self, frame):
         """Take an image, isolate the target, and return the calculated values."""
@@ -224,6 +226,8 @@ class TargetProcessing(ProcessorBase):
             if len(self.alignment_angles) > self.list_limit:
                 self.alignment_angles = self.alignment_angles[1:]
             alignment_angle = median(self.alignment_angles)
+
+            horizontal_angle += self.angle_adjust
             
             inner = 0  # whether coordinates refer to inner port
 
@@ -303,7 +307,13 @@ class TargetProcessing(ProcessorBase):
                 continue
             
             solidity = cv2.contourArea(cnt) / cv2.contourArea(hull)
-            if solidity > .75:
+            if solidity > self.solidity_limit:
+                continue
+
+            epsilon = 0.05*cv.arcLength(cnt,True)
+            approx = cv.approxPolyDP(cnt,epsilon,True)
+            solidity = cv2.contourArea(approx) / cv2.contourArea(hull)
+            if solidity > self.solidity_limit:
                 continue
 
             valid.append((cnt, hull))
@@ -480,6 +490,8 @@ if __name__ == '__main__':
 
     # Add NetworkTables listeners
     smart_dashboard.putBoolean('Vision/view_thresh', False)
+    smart_dashboard.putNumber('Vision/angle_adjust', processor.angle_adjust)
+    smart_dashboard.putNumber('Vision/solidity_limit', processor.solidity_limit)
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/value', processor.upper_thresh[2])
@@ -492,6 +504,14 @@ if __name__ == '__main__':
                 set_threshhold_value(upper_lower, value),
                 ntcore.constants.NT_NOTIFY_UPDATE
             )
+    smart_dashboard.getEntry(f'Vision/angle_adjust').addListener(
+        lambda fromobj, key, value, isNew: processor.angle_adjust = value,
+        ntcore.constants.NT_NOTIFY_UPDATE
+    )
+    smart_dashboard.getEntry(f'Vision/solidity_limit').addListener(
+        lambda fromobj, key, value, isNew: processor.solidity_limit = value,
+        ntcore.constants.NT_NOTIFY_UPDATE
+    )
 
     # Preallocate an image
     img = np.zeros(shape=(height, width, 3), dtype=np.uint8)
