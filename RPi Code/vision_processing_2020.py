@@ -175,6 +175,7 @@ class TargetProcessing(ProcessorBase):
         self.alignment_angles = []
         self.list_limit = 5
         self.angle_adjust = 0
+        self.vertical_angle_adjust = 0
         self.solidity_limit = 0.75
 
     def process_image(self, frame):
@@ -228,6 +229,7 @@ class TargetProcessing(ProcessorBase):
             alignment_angle = median(self.alignment_angles)
 
             horizontal_angle += self.angle_adjust
+            vertical_angle += self.vertical_angle_adjust
             
             inner = 0  # whether coordinates refer to inner port
 
@@ -310,8 +312,8 @@ class TargetProcessing(ProcessorBase):
             if solidity > self.solidity_limit:
                 continue
 
-            epsilon = 0.05*cv.arcLength(cnt,True)
-            approx = cv.approxPolyDP(cnt,epsilon,True)
+            epsilon = 0.05*cv2.arcLength(cnt,True)
+            approx = cv2.approxPolyDP(cnt,epsilon,True)
             solidity = cv2.contourArea(approx) / cv2.contourArea(hull)
             if solidity > self.solidity_limit:
                 continue
@@ -491,6 +493,7 @@ if __name__ == '__main__':
     # Add NetworkTables listeners
     smart_dashboard.putBoolean('Vision/view_thresh', False)
     smart_dashboard.putNumber('Vision/angle_adjust', processor.angle_adjust)
+    smart_dashboard.putNumber('Vision/vertical_angle_adjust', processor.vertical_angle_adjust)
     smart_dashboard.putNumber('Vision/solidity_limit', processor.solidity_limit)
     smart_dashboard.putNumber('Vision/Threshhold/Upper/hue', processor.upper_thresh[0])
     smart_dashboard.putNumber('Vision/Threshhold/Upper/saturation', processor.upper_thresh[1])
@@ -504,12 +507,22 @@ if __name__ == '__main__':
                 set_threshhold_value(upper_lower, value),
                 ntcore.constants.NT_NOTIFY_UPDATE
             )
+    def update_1(fromobj, key, value, isNew):
+        processor.vertical_angle_adjust = value
+    def update_2(fromobj, key, value, isNew):
+        processor.angle_adjust = value
+    def update_3(fromobj, key, value, isNew):
+        processor.solidity_limit = value
+    smart_dashboard.getEntry(f'Vision/vertical_angle_adjust').addListener(
+        update_1,
+        ntcore.constants.NT_NOTIFY_UPDATE
+    )
     smart_dashboard.getEntry(f'Vision/angle_adjust').addListener(
-        lambda fromobj, key, value, isNew: processor.angle_adjust = value,
+        update_2,
         ntcore.constants.NT_NOTIFY_UPDATE
     )
     smart_dashboard.getEntry(f'Vision/solidity_limit').addListener(
-        lambda fromobj, key, value, isNew: processor.solidity_limit = value,
+        update_3,
         ntcore.constants.NT_NOTIFY_UPDATE
     )
 
