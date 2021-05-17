@@ -1,35 +1,78 @@
-# FRC Team 2619 Vision
-This is the vision program the we used for the 2020 Infinite Recharge season.
+# ElectronVision
 
-## FRC Rasberry Pi Dashboard
-You can view the official documentation [here](https://wpilib.screenstepslive.com/s/currentCS/m/85074/l/1027798-the-raspberry-pi-frc-console).
+## Quick Links
 
-### Powering the Pi
-Make sure you have enough power supplied to the Pi, or else it will randomly crash and cause many issues. The official requirements are found [here](https://www.raspberrypi.org/documentation/hardware/raspberrypi/power/README.md), but in short for the Raspberry Pi 3 it's 5V & 2.5A.
+ - [WPILibPi Releases](https://github.com/wpilibsuite/WPILibPi/releases)
+ - [WPILib Vision Documentation](https://docs.wpilib.org/en/stable/docs/software/vision-processing/wpilibpi/using-the-raspberry-pi-for-frc.html)
+ - [RobotPy Documentation](https://robotpy.readthedocs.io/en/stable/)
+ - [OpenCV Documentation](https://docs.opencv.org/4.5.2/d6/d00/tutorial_py_root.html)
+ - [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html)
+ - [PSCP](https://it.cornell.edu/managed-servers/transfer-files-using-putty)
 
-### Connecting to the Pi
-When connecting over ethernet, you first have to change your ethernet connection settings. Right click on the wifi icon and select `Open Network & Internet Settings`. Then select `Change Adapter Options` and double click into the ethernet port that you're using. Select `Properties` and then select the properties of `Internet Protocol Version 4 (TCP/IPv4)`. Change the IP address to `10.26.19.5` and the subnet mask to `255.0.0.0`. Make sure you exit out of all of tabs in the interface, for some wierd reason it doesn't save if you don't. The other settings shouldn't need to be changed. You can also select the option entitled `DHCP` which doesn't require you to change any ethernet settings, but while DHCP worked for most competitions it broke for our off-season one.
+## Feature List
 
-To connect to the dashboard go to `frcvision.local/` or if that doesn't work the IP address of the Pi, so `10.26.19.12/`.
+ - [x] Easily runnable on computer and Pi
+ - [x] Shuffleboard tuning GUI
+ - [ ] Intuitive workflow
+ - [x] Quick development
+ - [x] Does not require extensive knowledge of OpenCV or numpy
+ - [ ] Does not require linux knowledge
+ - [x] Adaptable to other projects (machine learning and other pipelines)
 
-#### Setting static IP address on Pi
-IPv4 Address: `10.26.19.12`
-Subnet Mask: `255.255.255.0`
-Gateway: `10.26.19.1`
-DNS Server: `10.26.19.1`
+## Setup
 
-#### If you can't connect to the Pi
-If you have an issue connecting to the Pi with a static IP, you can find the IP of the Pi by connecting to it with a keyboard and monitor and running the command `sudo ifconfig`. The IP of the Pi is listed as `inet` under `eth0` (make sure the Pi is still connected to your computer via ethernet if it doesn't appear). Then set the IP address of the computer's ethernet to `XXX.XXX.XXX.5` and the subnet mask to `255.0.0.0`.
+A Raspberry Pi 3 requires 5V & 2.5A to function correctly; The official requirements can be found [here](https://www.raspberrypi.org/documentation/hardware/raspberrypi/power/README.md). Most 5V charges only use 1A, so double check yours is valid, otherwise the Pi will restart for no reason.
 
-### Saving camera parameters
-I've had a lot of trouble with saving the camera parameters. Properties such as gain and exposure wouldn't change correctly, it would take severl tries and they wouldn't change on their own. I don't know how I got it working, it just works. My advice: whenever you change the camera parameters keep a backup of the previous settings in case things break. Also if you still have trouble try change the parametes ddirectly from the json file and not hitting their save to json file option. Another note, if you try and boot the pi but it gives you an error that says something about a json file not being found, just resave the camera settings and it should fix it.
+If there's connection issues between the Pi and the Rio, then an ethernet hub might be required, we needed one in Deep Space.
 
-### Network tables
-You can view the NetworkTables and edit them on the Pi without connecting to the robot by using the Pi in server mode, and then using OutlineViewer and connect to `10.26.19.12`.
+## Connecting to the Pi
 
-## Bandwidth Monitoring
-It can be useful to monitor your bandwith to see what resolution camera you can safely use and stay within the limits. By default, FRC radios enforce the 4Mbs limit, but if you have an older radio you'll need to change that yourself. The application `Performance Monitor` on Windows 10 is useful for monitoring bandwith. When it's open, hit the green plus and select `Network Interface`. Delete anythin but total bytes per second and resize the graph axes and you can see your bandwidth usage.
+Normally, you can connect to the Pi by using `frcvision.local/`, or in rare cases `frcvision.lan/`. However, those are really iffy on Windows, so I normally just use the IP address of the Pi.
 
-## Machine Learning
+### Finding the IP Address
 
-We might do machine learning, we might not. The docs for it are [here](https://docs.wpilib.org/en/latest/docs/software/examples-tutorials/machine-learning/index.html). The docs direct you to the site [Supervisely](https://supervise.ly/) to get the dataset. The images might be useful as data to get a ball filter as another option than machine learning. An excerpt from some of this downloaded data that could be used for that is in the folder titled `Power Cell Images`.
+If you're connected to the Pi with a keyboard and monitor, use the default username (`pi`) and password  (`raspberry`) to connect and run the command `hostname -I` in the console.
+
+Once you're all set up, I recommend adding a few lines of code to your Python script to print the IP at the start of execution.
+
+```python
+import os
+print(os.system('hostname -I'))
+```
+
+## File Uploads
+
+Files can be uploaded to the Pi in one of two ways. First, the application can be set to uploaded Python file, and a single Python file can be uploaded. This file will be placed in the home directory, renamed to `uploaded.py`, and run by the `runCamera` shell script.
+
+Secondly, files can be uploaded in the File Upload tab. Any file uploaded here will be placed in the root directory. Additionally, if a zip file is uploaded then it will be extracted to a directory of the same name in the root directory. Note that the `runCamera` script will not run any files from these, it will still only call `uploaded.py`. Because of this, I recommend putting a short script in `uploaded.py` that uses a module that you upload as a zip file. You could also just store everything in the same file, but that's a pain, and it if it's separate you can easily test and both your computer and the Pi.
+
+## Testing
+
+### Bandwidth Monitoring
+
+By default, FRC enforces a 4Mbs limit, but this can be changed in the
+[radio configuration utility](https://docs.wpilib.org/en/stable/docs/zero-to-robot/step-3/radio-programming.html)
+if desired for testing or off-season projects.
+
+To monitor bandwidth usage the Windows 10 app Performance Monitor can be used.
+Hit the green plus button and select Network Interface, and then delete
+everything except total bytes per second and resize the graph axes.
+
+### Running on a Computer
+
+The code can be run on a computer as well as the Pi. The only thing that needs
+to be changed is the method of calling the vision processing class.
+
+## Advanced Usage
+
+### Connecting to the Pi Directly
+
+To connect directly to the Pi, I recommend using the software [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html). To transfer files between your computer and the Pi, I recommend using [PSCP](https://it.cornell.edu/managed-servers/transfer-files-using-putty).
+
+If you're using a static IP for the Pi, then you'll have no issues. However, if you're using DHCP then you need to know the IP.
+
+The Pi runs linux internally, so you should get to know the basics. Check out something like [this quick guide](https://its.temple.edu/linux-quick-reference-guide).
+
+If you ever find yourself wanting to edit some files on the py directly, you can use most Linux text editors but I strongly recommend `nano`, it's much simpler than any of the others and has most basic features.
+
+When you upload a zip file, you need to manually remove the old one. This can be done by running `rm -r vision`, or whatever the name of your directory was.
