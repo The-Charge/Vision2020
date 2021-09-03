@@ -31,6 +31,7 @@ class ExampleProcessor(TargetProcessor):
         self.opening_radius = 5
         self.opening_iterations = 2
 
+        # Coordinates of the piece of paper
         self.OBJECT_POINTS = np.array([
             [-5.5, 4.25, 0],
             [5.5, 4.25, 0],
@@ -39,8 +40,10 @@ class ExampleProcessor(TargetProcessor):
         ], dtype='float')
 
     def is_valid(self, contour):
+        # Remove very small contours
         if len(contour) <= 5 or cv2.contourArea(contour) < 100:
             return False
+        # Remove non-quadrilateral contours
         elif len(polygon_from(contour)) != 4:
             return False
         else:

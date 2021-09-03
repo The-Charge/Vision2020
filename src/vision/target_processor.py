@@ -26,6 +26,7 @@ class TargetProcessor(Processor):
     x_camera_offset = SyncedValue('Camera Offset/x', 0)
     y_camera_offset = SyncedValue('Camera Offset/y', 0)
     z_camera_offset = SyncedValue('Camera Offset/z', 0)
+    # The below are angles in radians
     horizontal_camera_offset = SyncedValue('Camera Offset/horizontal_angle', 0)
     vertical_camera_offset = SyncedValue('Camera Offset/vertical_angle', 0)
 
@@ -44,6 +45,7 @@ class TargetProcessor(Processor):
 
     def __init__(self, size):
         super().__init__()
+        # Stores the average FPS over 15 values
         self.fps_filter = MovingAverage(15)
 
         self.size = size

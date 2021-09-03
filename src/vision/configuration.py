@@ -74,6 +74,7 @@ def camera_from_config(config):
 
 
 def start_camera(camera, stream_config=None):
+    """Start an automatic camera capture and return the server."""
     print(f'Starting camera{camera.getInfo().name, camera.getInfo().path}')
     server = CameraServer.getInstance().startAutomaticCapture(camera=camera, return_server=True)
     if stream_config is not None:

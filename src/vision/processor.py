@@ -39,7 +39,8 @@ class Processor(ABC):
 
     @classmethod
     def left_label(cls, BGR_image, labels, width=175):
-        """Draw a black box with text in the top-left on an image."""
+        """Draw a black box with text in the top-left on an image. Labels should
+        be a list of strings. Functions by reference; no return value."""
 
         y = 20
         cv2.rectangle(
@@ -72,7 +73,8 @@ class Processor(ABC):
 
     @classmethod
     def label_contour(cls, BGR_image, contour, text):
-        """Add a text label directly above a given contour."""
+        """Add a text label directly above a given contour. Functions by
+        reference; no return value."""
         text = str(text)
         font = cv2.FONT_HERSHEY_SIMPLEX
         size, _ = cv2.getTextSize(text, font, 1, 1)
@@ -98,7 +100,7 @@ class Processor(ABC):
     @staticmethod
     def draw_guidelines(image, color=None):
         """Draw a vertical and horizontal guideline on the center axes of the
-        image."""
+        image. Functions by reference; no return value."""
         size = image.shape[1], image.shape[0]
         center = size[0] // 2, size[1] // 2
         cv2.line(

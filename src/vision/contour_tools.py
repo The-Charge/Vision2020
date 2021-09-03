@@ -7,9 +7,6 @@ import cv2
 import numpy as np
 
 
-# If you've never seen __all__ before, it's an optional thing you can add to
-# programs. It makes it so when i run `from contour_tools import *`, only the
-# functions listed here will be imported.
 __all__ = [
     'aspect_ratio_of',
     'extent_of',
@@ -61,7 +58,14 @@ def polygon_from(contour, tolerance=0.05):
     """Estimate a polygon from a contour. The tolerance is a percentage value.
     When OpenCV is creating the polygon, it calculates the distance between the
     current line and the next point in the contour. If that distance is greater
-    than the tolerance times the length of the contour, it creates a new line."""
+    than the tolerance times the length of the contour, it creates a new line.
+
+    Note that the polygon returned from this is itself a contour, so functional
+    with all these functions.
+
+    Also there's no function here to get the convex hull/convex polygon, but
+    that's just because it's 1 line normally: cv2.convexHull(contour)
+    """
     return cv2.approxPolyDP(
         contour,
         tolerance * cv2.arcLength(contour, True),
